@@ -64,6 +64,7 @@ library(cluster)
 #library(impute) # install it for imputing missing value 
 library(WGCNA)
 options(stringsAsFactors = F)
+library(gplots)
 ```
 
 ## read in the 8000 most varying genes (GBM microarray data)
@@ -314,10 +315,11 @@ par(mfrow=c(2,1), mar=c(1, 2, 4, 1))
 ClusterSamples=hclust(dist(datExpr[,restConnectivity] ),method="average")
 # for the first (turquoise) module we use
 which.module="turquoise"
-matplot(t(scale(datExpr[ClusterSamples$order,restConnectivity][,colorh1==which.module ])),nrgcols=30,rlabels=T, clabels=T,rcols=which.module,main=which.module )
+rg=colorpanel(50, low="green", mid="black", high="red")
+heatmap(t(scale(datExpr[ClusterSamples$order,restConnectivity][,colorh1==which.module ])),col=rg,Colv=NA)
 # for the second (blue) module we use
 which.module="blue"
-matplot(t(scale(datExpr[ClusterSamples$order,restConnectivity][,colorh1==which.module ])),nrgcols=30,rlabels=T, clabels=T,rcols=which.module,main=which.module ) 
+heatmap(t(scale(datExpr[ClusterSamples$order,restConnectivity][,colorh1==which.module ])),col=rg,Colv=NA)
 ```
 
 Now we extend the color definition to all genes by coloring all non-module genes grey.
