@@ -9,13 +9,12 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(warning = FALSE)
 knitr::opts_chunk$set(message = FALSE)
+setwd("/Users/samoz/Documents/phd/year1/stat 465/project/STAT_465_gene_coexpression/tutorial")
 ```
 
 # CONTENTS
 
 This is stolen from: ![https://horvath.genetics.ucla.edu/html/GeneralFramework/GBMTutorialHorvath.pdf]
-
-This is soft clustering only!!
 
 This document contains function for carrying out the following tasks
 
@@ -78,11 +77,13 @@ datSummary=dat0[,1:9]
 The following data frame contains the gene expression data: columns are genes, rows are arrays (samples)
 
 ```{r}
-datExpr = t(dat0[,10:64]) 
+datExpr = t(dat0[,10:64])
 
 no.samples = dim(datExpr)[[1]]
 dim(datExpr)
 rm(dat0);gc()
+
+datExpr
 ```
 
 
@@ -219,7 +220,7 @@ Inputs: TOM distance measure, hierarchical (hclust) object, color
 
 Warning: for large gene sets, say more than 2000 genes this will take a while. I recommend you skip this.
 
-```{r eval=FALSE}
+```{r}
 TOMplot(dissTOM , hierTOM, colorh1) 
 ```
 
@@ -433,7 +434,7 @@ table(FilterGenes)
 
 # How to output the data? 
 
-```{r eval=FALSE}
+```{r}
 datout=data.frame(datSummary, colorNEW=color1, ConnectivityNew=Connectivity,datKME )
 write.table(datout, file="OutputCancerNetwork.csv", sep=",", row.names=F)
 ```
@@ -523,14 +524,14 @@ The clustering coefficient measures the cliquishness of a gene. Many references 
 Here we study how the clustering coefficient depends on the connectivity.
 
 Since this is computationally intensive (around 15 minutes), we recommend to skip it.
-```{r eval=FALSE}
+```{r}
 CC= clusterCoef(ADJ)
 gc()
 ```
 
 Now we plot cluster coefficient versus connectivity for all genes
 
-```{r eval=FALSE}
+```{r}
 par(mfrow=c(1,1),mar=c(2,2,2,1))
 plot(Connectivity[restConnectivity],CC,col=as.character(colorh1),xlab="Connectivity",ylab="Clust
 er Coefficient") 
@@ -538,10 +539,310 @@ er Coefficient")
 
 This compute the correlation between cluster coefficient and connectivity within each module.
 
-```{r eval=FALSE}
+```{r}
 restHub= Connectivity[restConnectivity]>0
 by(data.frame(CC=CC[restHub], k=Connectivity[restConnectivity][restHub]),
 INDICES=colorh1[restHub],FUN=cor) 
 ```
 
 
+# Unweighted analysis
+
+
+To construct an unweighted network (hard thresholding), we consider the following vector of potential thresholds. 
+
+```{r}
+thresholds1= c(seq(.1,.5, by=.1), seq(.55,.95, by=.05) ) 
+```
+
+To choose a cut-off value, we propose to use the Scale-free Topology Criterion (Zhang and Horvath 2005). Here the focus is on the linear regression model fitting index (denoted below by scale.law.R.2) that quantify the extent of how well a network satisfies a scale-free topology. The function PickHardThreshold can help one to estimate the cut-off value when using hard thresholding with the step adjacency function. The first column lists the threshold ("cut"), the second column lists the corresponding p-value based on the Fisher transform. The third column reports the resulting scale free topology fitting index R^2. The fourth column reports the slope of the fitting line. The fifth column reports the fitting index for the truncated exponential scale free model. Usually we ignore it. The remaining columns list the mean, median and maximum connectivity. To pick a hard threshold (cut) with the scale free topology criterion: aim for high scale free R^2 (column 3), high connectivity (col 6) and negative slope (around -1, col 4).
+
+```{r}
+RdichotTable=WGCNA::pickHardThreshold(datExpr, cutVector=thresholds1)[[2]]
+gc()
+```
+
+
+Let’s plot the scale free topology model fitting index (R^2) versus the cut-off tau. However, the R^2 values of those cut-offs that lead to a negative slope have been pre-multiplied by -1. 
+
+```{r}
+cex1=0.7
+gc()
+par(mfrow=c(1,2))
+plot(RdichotTable[,1], -sign(RdichotTable[,4])*RdichotTable[,3],xlab="Hard Threshold
+tau",ylab="Scale Free Topology Model Fit,signed R^2", type="n")
+text(RdichotTable[,1], -sign(RdichotTable[,4])*RdichotTable[,3] , labels=thresholds1,cex=cex1)
+# this line corresponds to using an R^2 cut-off of h
+abline(h=0.95,col="red")
+plot(RdichotTable[,1], RdichotTable[,6],xlab="Hard Threshold tau",ylab="Mean Connectivity",
+type="n")
+text(RdichotTable[,1], RdichotTable[,6] , labels=thresholds1, cex=cex1) 
+```
+
+To choose a cut-off value tau, we propose to use the Scale-free Topology Criterion (Zhang and
+Horvath 2005). Here the focus is on the linear regression model
+fitting index (denoted as scale.law.R.2) that quantify the extent of how well
+a network satisfies a scale-free topology. We choose the cut value (tau) of 0.7 for the correlation
+matrix since this is where the R^2 curve seems to saturates. The red line corresponds to R^2= 0.95.
+From the above table, we find that the resulting slope looks OK (negative and around -1), and the
+mean number of connections looks good Below we investigate different choices of tau.
+
+Now we want to see how the correlation between kWithin and gene significance changes for different hard threshold values tau within the BROWN module. 
+
+```{r}
+corhelp=cor(datExpr[,restConnectivity],use="pairwise.complete.obs")
+whichmodule="brown"
+# the following data frame contains the intramodular connectivities
+# corresponding to different hard thresholds
+datconnectivitiesHard=data.frame(matrix(666,nrow=sum(colorh1==whichmodule),ncol=length(thresholds1)))
+names(datconnectivitiesHard)=paste("kWithinTau",thresholds1,sep="")
+for (i in c(1:length(thresholds1)) ) {
+datconnectivitiesHard[,i]=apply(abs(corhelp[colorh1==whichmodule,
+colorh1==whichmodule])>=thresholds1[i],1,sum)}
+SpearmanCorrelationsHard=signif(cor(GeneSignificance[ colorh1==whichmodule],
+datconnectivitiesHard, method="s",use="p")) 
+```
+
+
+Now we define the new connectivity measure omega based on the TOM matrix. It simply considers TOM as adjacency matrix... 
+
+```{r}
+datkTOMINHard=data.frame(matrix(666,nrow=sum(colorh1==whichmodule),ncol=length(thresholds1)))
+names(datkTOMINHard)=paste("omegaWithinHard",thresholds1,sep="")
+for (i in c(1:length(thresholds1)) ) {
+datconnectivitiesHard[,i]=apply(
+1-TOMdist(apply(abs(corhelp[colorh1==whichmodule,
+colorh1==whichmodule])>thresholds1[i],2,as.numeric)),1,sum)}
+SpearmanCorrelationskTOMHard=as.vector(signif(cor(GeneSignificance[
+colorh1==whichmodule], datconnectivitiesHard, method="s",use="p")))
+```
+
+Now we compare the performance of the 2 connectivity measures (k.in and kTOM.IN) across different hard thresholds when it comes to predicting prognostic genes in the brown module 
+
+```{r}
+par(mfrow=c(1,1), mar=c(5, 4, 4, 2) +0.1)
+plot(thresholds1, SpearmanCorrelationsHard, main="
+Cor(Connectivity,Gene Significance) vs Hard Thresholds",ylab="Spearman Correlation(Gene
+Significance,Connectivity)",xlab="Threshold tau", type="n",
+ylim=range(c(SpearmanCorrelationsHard, SpearmanCorrelationskTOMHard),na.rm=T))
+text(thresholds1, SpearmanCorrelationsHard,labels=thresholds1,col="black")
+# this draws a vertical line at the tau that was chosen by the
+# scale free topology criterion.
+abline(v=0.7,col="red")
+points(thresholds1, SpearmanCorrelationskTOMHard, type="n")
+text(thresholds1, SpearmanCorrelationskTOMHard,labels=thresholds1,col="blue") 
+```
+
+Now we define the intramodular cluster coefficient 
+
+```{r}
+datCCinHard=data.frame(matrix(666,nrow=sum(colorh1==whichmodule),ncol=length(thresholds1
+)))
+names(datCCinHard)=paste("CCinHard",thresholds1,sep="")
+for (i in c(1:length(thresholds1)) ) {
+datCCinHard[,i]= clusterCoef(apply(abs(corhelp[colorh1==whichmodule,
+colorh1==whichmodule])>thresholds1[i],2,as.numeric))}
+SpearmanCorrelationsCCinHard=as.vector(signif(cor(GeneSignificance[ colorh1==whichmodule],
+datCCinHard, method="s",use="p"))) 
+```
+
+Now we compare the performance of the connectivity measures (k.in, kTOM.IN, cluster coefficience) across different hard thresholds when it comes to predicting prognostic genes in the brown module
+
+```{r}
+dathelpHard=data.frame(signedRsquared=-sign(RdichotTable[,4])*RdichotTable[,3],
+corGSkINHard =as.vector(SpearmanCorrelationsHard), corGSwINHard=
+as.vector(SpearmanCorrelationskTOMHard),corGSCCHard=as.vector(SpearmanCorrelationsCCinHard))
+matplot(thresholds1,dathelpHard,type="l",lty=1,lwd=3,col=c("black","red","blue","green"),ylab=""
+,xlab="tau",xlim=c(.2,1))
+legend(0.75,0, c("signed R^2","r(GS,k.in)","r(GS,kTOM.IN)","r(GS,cc.in)"),
+col=c("black","red","blue","green"), lty=1,lwd=3,ncol = 1, cex=1)
+abline(v=.7,col="red") 
+```
+
+Note that very high or very small threshold values lead to a small correlation, i.e. a diminished biological signal. The red line corresponds to the threshold that was picked using the scale free topology criterion. The scale free topology criterion picked a threshold that leads to very high significant correlation between node connectivity and gene significance.
+
+```{r}
+AdjMatHARD=abs(cor(datExpr[,restConnectivity]))>0.70+0.0
+diag(AdjMatHARD)=0
+cluster.coefrestHARD= clusterCoef(AdjMatHARD)
+ConnectivityHARD= apply(AdjMatHARD,2,sum)
+par(mfrow=c(1,1))
+plot(ConnectivityHARD,cluster.coefrestHARD,col=as.character(colorh1),xlab="Connectivity",ylab="Cluster Coefficient" ) 
+```
+
+Now we correlate the cluster coefficient with connectivity by module in the unweighted network 
+
+```{r}
+restHub=ConnectivityHARD>100
+by(data.frame(CC= cluster.coefrestHARD[restHub], k=ConnectivityHARD[restHub]),
+INDICES=colorh1[restHub],FUN=cor) 
+```
+
+# Let’s compare a summary of soft thresholding to one of hard thresholding 
+
+```{r}
+apply(dathelpHard,2,summary)
+```
+
+• Using the Max. values, we find that when it comes to correlating gene significance with a
+centrality measure (connectivity or cluster coefficient), the soft intramodular cluster
+coefficient is most highly correlated with gene significance. Next comes the soft TOM
+based connectivity (wIN), then kIN. In other applications, the cluster coefficient is not the
+best centrality measure. But please let us know if you find empirical evidence that the
+cluster coefficient is a good centrality measure. In the latest version of the manuscript
+Zhang and Horvath (2005) we present a theoretical argument that shows that is a weak
+positive correlation between intramodular cluster coefficient and intramodular connectivity
+in weighted networks. In contrast, one finds a negative correlation between cluster
+coefficient and connectivity in unweighted networks (see the plot in the appendix).
+• We find that soft thresholding is superior to hard thresholding especially for low values of
+the scale free topology R^2.
+• In our opinion, soft centrality (connectivity) measures are better than hard measures
+because they are relatively robust with respect to the parameter of the adjacency function.
+For soft thresholding even choosing a power of beta=1 leads to a good biological signal
+(correlation). In contrast, choosing a hard threshold of tau=0.2 leads to a much reduced
+biological signal. Robustness is a very attractive property in this type of analysis since
+picking parameters of the adjacency function is rather ad-hoc.
+• The Scale free topology criterion leads to estimates of the adjacency function that often
+have good biological signal. 
+
+
+# APPENDIX: Constructing an unweighted networks and comparing it to the weighted nework.
+
+Here we study whether the `soft’ modules of the unweighted network described above can also be
+found in the unweighted network
+
+Recall that the soft module assignment in the 3600 most connected genes is given by 
+
+```{r}
+colorh1=as.character(datSummary$color1[restConnectivity])
+```
+
+Let’s define the adjacency matrix of an unweighted network 
+
+```{r}
+ADJ= abs(cor(datExpr[,restConnectivity],use="p"))>0.7
+gc()
+# This is the unweighted connectivity
+k=as.vector(apply(ADJ,2,sum)) 
+```
+
+Let’s compare weighted to unweighted connectivity in a scatter plot
+
+```{r}
+plot(k, Connectivity[restConnectivity],xlab="Unweighted
+Connectivity",ylab="Weighted Connectivity",main=paste( "correlation =
+",signif(cor(k,Connectivity[restConnectivity]),2)),col=colorh1)
+```
+
+Comments:
+• the connectivity measures is highly preserved between weighted and unweighted networks
+as long as the scale free topology criterion is used for network construction. It is re-assuring
+that the biological findings will be robust with respect to the network construction method
+• The genes with the highest whole network connectivity are contained in the turquoise
+module, which happens to be the largest module. The second most connected genes are in
+the blue module, which is the second largest module, etc.
+
+The following code computes the topological overlap matrix based on the adjacency matrix
+
+TIME: Takes about 10 minutes.... 
+
+```{r}
+ADJ <- apply(ADJ,2,as.numeric)
+dissTOM=TOMdist(ADJ)
+gc() 
+```
+
+Now we carry out hierarchical clustering with the TOM matrix. Branches of the resulting clustering tree will be used to define gene modules. 
+
+```{r}
+hierTOM = hclust(as.dist(dissTOM),method="average");
+par(mfrow=c(1,1))
+plot(hierTOM,labels=F) 
+```
+
+By our definition, modules correspond to branches of the tree. The function modulecolor2 colors each gene by the branches that result from choosing a particular height cut-off. GREY IS RESERVED to color genes that are not part of any module. We only consider modules that contain at least 125 genes.
+
+```{r}
+colorh2=as.character(modulecolor2(hierTOM,h1=.75, minsize1=125)) 
+```
+
+The following table shows that there is fairly high agreement between the soft and the hard module assignments 
+
+```{r}
+table(colorh1,colorh2)
+
+#Rand index to measure agreement between the clusterings
+randIndex(table(colorh1,colorh2)) 
+```
+
+Note that the brown module in the weighted network (colorh1) is a little bit larger than the corresponding module in the unweighted network. But the point is that it is highly preserved. Since this module is of biological interest, the good news is that the biological findings are robust with respect to the network construction method as long as the scale free topology criterion is used to construct the network. 
+
+```{r}
+par(mfrow=c(3,1), mar=c(2,2,2,1))
+plot(hierTOM, main="Unweighted Network Module Tree ", labels=F, xlab="",
+sub="");
+hclustplot1(hierTOM, colorh2, main="Colored by Unweighted modules")
+hclustplot1(hierTOM, colorh1, main="Colored by Weighted modules")
+```
+
+An alternative view of this is the so called TOM plot that is generated by the function TOMplot 
+
+Inputs: TOM distance measure, hierarchical (hclust) object, color
+
+Here we use the unweighted module tree but color it by the weighted modules.
+
+```{r}
+TOMplot(dissTOM , hierTOM, as.character(datSummary$color1[restConnectivity]))
+gc() 
+```
+
+Comment: module assignment is highly preserved. 
+
+```{r}
+verboseBarplot(GeneSignificance,colorh1,main="Gene Significance in Soft Modules") 
+verboseBarplot(GeneSignificance,colorh2,main="Gene Significance in Hard Modules") 
+```
+
+
+Now we compute the cluster coefficient. Since this is computationally intensive, we recommend to skip it. 
+
+```{r}
+CC= clusterCoef(ADJ)
+gc() 
+
+plot(k,CC,col= as.character(datSummary$color1[restConnectivity]),xlab="Connectivity
+(Hard)",ylab="Cluster Coefficient") 
+```
+
+Comment: for unweighted networks there is an inverse relationship between cluster coefficient and connectivity. This is different from the case of weighted networks. In our opinion, this inverse relationship is an artifact of hard thresholding, see Zhang and Horvath (2005). 
+
+Now we study how intramodule connectivity relates to gene significance 
+
+```{r}
+ConnectivityMeasures=intramodularConnectivity(ADJ,colorh2) 
+```
+
+The following plots would show the gene significance vs intromodular connectivity
+
+```{r}
+par(mfrow=c(2,3))
+colorlevels=unique(colorh2)
+whichmodule=colorlevels[[1]];restrict1=colorh2==whichmodule
+verboseScatterplot(ConnectivityMeasures$kWithin[restrict1],
+GeneSignificance[restrict1],col=colorh2[restrict1],main=whichmodule)
+whichmodule= colorlevels[[2]];restrict1=colorh2==whichmodule
+verboseScatterplot(ConnectivityMeasures$kWithin[restrict1],
+GeneSignificance[restrict1],col=colorh2[restrict1],main=whichmodule)
+whichmodule= colorlevels[[3]];restrict1=colorh2==whichmodule
+verboseScatterplot(ConnectivityMeasures$kWithin[restrict1],
+GeneSignificance[restrict1],col=colorh2[restrict1],main=whichmodule)
+whichmodule= colorlevels[[4]];restrict1=colorh2==whichmodule
+verboseScatterplot(ConnectivityMeasures$kWithin[restrict1],
+GeneSignificance[restrict1],col=colorh2[restrict1],main=whichmodule)
+whichmodule= colorlevels[[5]];restrict1=colorh2==whichmodule
+verboseScatterplot(ConnectivityMeasures$kWithin[restrict1],
+GeneSignificance[restrict1],col=colorh2[restrict1],main=whichmodule)
+whichmodule= colorlevels[[6]];restrict1=colorh2==whichmodule
+verboseScatterplot(ConnectivityMeasures$kWithin[restrict1],
+GeneSignificance[restrict1],col=colorh2[restrict1],main=whichmodule)
+```
