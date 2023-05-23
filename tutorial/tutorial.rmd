@@ -82,8 +82,6 @@ datExpr = t(dat0[,10:64])
 no.samples = dim(datExpr)[[1]]
 dim(datExpr)
 rm(dat0);gc()
-
-datExpr
 ```
 
 
@@ -721,6 +719,7 @@ Let’s define the adjacency matrix of an unweighted network
 
 ```{r}
 ADJ= abs(cor(datExpr[,restConnectivity],use="p"))>0.7
+ADJ <- apply(ADJ,2,as.numeric)
 gc()
 # This is the unweighted connectivity
 k=as.vector(apply(ADJ,2,sum)) 
@@ -747,7 +746,6 @@ The following code computes the topological overlap matrix based on the adjacenc
 TIME: Takes about 10 minutes.... 
 
 ```{r}
-ADJ <- apply(ADJ,2,as.numeric)
 dissTOM=TOMdist(ADJ)
 gc() 
 ```
