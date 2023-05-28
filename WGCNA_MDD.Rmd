@@ -1,0 +1,227 @@
+---
+title: "WGCNA_Tutorial"
+author: "Geoffrey Bonnanzio"
+date: "2023-05-23"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries}
+# read in the R libraries
+library(MASS) # standard, no need to install
+library(class) # standard, no need to install
+library(cluster)
+library(impute)# install it for imputing missing value
+library(WGCNA)
+library(oligo)
+library(GEOquery)
+options(stringsAsFactors=F)
+```
+
+```{r}
+
+#file_path <- "GSE39653/GSE39653_non-normalized.txt.gz"
+
+# Read the compressed file
+#raw_data <- read.table(gzfile(file_path), header = TRUE, sep = "\t")
+
+#all_samples <- raw_data[, grep("^SAMPLE", names(raw_data))]
+
+```
+
+
+
+
+```{r}
+
+# Specify GSE accession number
+gse_acc <- "GSE39653"  # Replace with the actual GSE accession number
+
+# Download GSE data
+gse <- getGEO(gse_acc)
+
+# Extract expression data
+expression_data <- exprs(gse[[1]])
+has_zeros <- any(expression_data == 0)
+# Extract sample metadata
+metadata <- pData(gse[[1]])
+```
+
+```{r}
+# Reassign column names
+patient_indicator <- metadata$title
+#patient_indicator <- sub("[0-9]+$", "", patient_indicator)
+colnames(expression_data) <- patient_indicator
+#rownames(expression_data) <- raw_data$ID_REF
+```
+
+```{r}
+
+#expression_data <- all_samples
+
+# Calculate the expression threshold for bottom third
+expression_threshold <- quantile(expression_data, 0.33)  # Bottom third threshold
+
+# Determine which genes meet the removal criteria
+genes_to_remove <- rowSums(expression_data <= expression_threshold) >= 0.8 * ncol(expression_data)
+
+# Remove genes that meet the removal criteria
+expression_data_filtered <- expression_data[!genes_to_remove, ]
+
+# Calculate the gene variability
+gene_variability <- apply(expression_data, 2, var)
+
+# Determine the variability threshold for the top 70%
+variability_threshold <- quantile(gene_variability, 0.3)
+
+# Select the top 70% most variable genes
+expression_data_final <- expression_data[gene_variability >= variability_threshold, ]
+
+
+```
+
+```{r}
+MD_combined_data <- expression_data_final[, grep("^(MDD|BD)", colnames(expression_data_final))]
+MDD_data <- expression_data_final[, grep(paste0("^", "MDD"), colnames(expression_data_final))]
+BD_data <- expression_data_final[, grep(paste0("^", "BD"), colnames(expression_data_final))]
+HC_data <- expression_data_final[, grep(paste0("^", "HC"), colnames(expression_data_final))]
+```
+
+```{r}
+#SOFT THRESHOLDING
+# Now we investigate soft thesholding with the power adjacency function
+powers1=c(seq(1,10,by=1),seq(12,20,by=2))
+
+
+RpowerTable=pickSoftThreshold(t(MD_combined_data), powerVector=powers1)[[2]]
+gc()
+cex1=0.7
+par(mfrow=c(1,2))
+plot(RpowerTable[,1], -sign(RpowerTable[,3])*RpowerTable[,2],xlab="Soft Threshold (power)",ylab="Scale Free Topology Model Fit,signed R^2",type="n")
+text(RpowerTable[,1], -sign(RpowerTable[,3])*RpowerTable[,2],
+labels=powers1,cex=cex1,col="red")
+# this line corresponds to using an R^2 cut-off of h
+abline(h=0.95,col="red")
+plot(RpowerTable[,1], RpowerTable[,5],xlab="Soft Threshold (power)",ylab="Mean
+Connectivity", type="n")
+text(RpowerTable[,1], RpowerTable[,5], labels=powers1, cex=cex1,col="red") 
+```
+```{r}
+datExpr <- t(MD_combined_data)
+beta1=5
+Connectivity=softConnectivity(datExpr,power=beta1)-1
+# Let’s create a scale free topology plot.
+# The black curve corresponds to scale free topology and
+# the red curve corresponds to truncated scale free topology.
+par(mfrow=c(1,1))
+scaleFreePlot(Connectivity, main=paste("soft threshold, power=",beta1), truncated=F) 
+```
+
+```{r}
+ConnectivityCut = 5000 # number of most connected genes that will be considered
+# Incidentally, in the paper by Mischel et al (2005) we considered all 3600 #genes.
+ConnectivityRank = rank(-Connectivity)
+restConnectivity = ConnectivityRank <= ConnectivityCut
+# thus our module detection uses the following number of genes
+sum(restConnectivity)
+# Now we define the adjacency matrix for the 3600 most connected genes
+ADJ= adjacency(datExpr[,restConnectivity],power=beta1)
+gc()
+# The following code computes the topological overlap matrix based on the
+# adjacency matrix.
+# TIME: This about a few minutes....
+dissTOM=TOMdist(ADJ)
+gc() 
+
+# Now we carry out hierarchical clustering with the TOM matrix.
+# This takes a couple of minutes.
+hierTOM = hclust(as.dist(dissTOM),method="average");
+par(mfrow=c(1,1))
+plot(hierTOM,labels=F)
+```
+
+```{r}
+colorh1= cutreeStaticColor(hierTOM,cutHeight = 0.94, minSize = 10)
+# The above should be identical to colorh1=datSummary$color1[restConnectivity]
+par(mfrow=c(2,1),mar=c(2,4,1,1))
+plot(hierTOM, main="Cluster Dendrogram", labels=F, xlab="", sub="");
+plotColorUnderTree(hierTOM,colors=data.frame(module=colorh1))
+title("Module (branch) color")
+```
+
+```{r}
+#SOFT THRESHOLDING
+# Now we investigate soft thesholding with the power adjacency function
+powers1=c(seq(1,10,by=1),seq(12,20,by=2))
+
+
+RpowerTable=pickSoftThreshold(t(HC_data), powerVector=powers1)[[2]]
+gc()
+cex1=0.7
+par(mfrow=c(1,2))
+plot(RpowerTable[,1], -sign(RpowerTable[,3])*RpowerTable[,2],xlab="Soft Threshold (power)",ylab="Scale Free Topology Model Fit,signed R^2",type="n")
+text(RpowerTable[,1], -sign(RpowerTable[,3])*RpowerTable[,2],
+labels=powers1,cex=cex1,col="red")
+# this line corresponds to using an R^2 cut-off of h
+abline(h=0.95,col="red")
+plot(RpowerTable[,1], RpowerTable[,5],xlab="Soft Threshold (power)",ylab="Mean
+Connectivity", type="n")
+text(RpowerTable[,1], RpowerTable[,5], labels=powers1, cex=cex1,col="red") 
+```
+
+
+
+```{r}
+datExpr <- t(HC_data)
+beta1=6
+Connectivity=softConnectivity(datExpr,power=beta1)-1
+# Let’s create a scale free topology plot.
+# The black curve corresponds to scale free topology and
+# the red curve corresponds to truncated scale free topology.
+par(mfrow=c(1,1))
+scaleFreePlot(Connectivity, main=paste("soft threshold, power=",beta1), truncated=F) 
+```
+
+```{r}
+ConnectivityCut = 10000 # number of most connected genes that will be considered
+# Incidentally, in the paper by Mischel et al (2005) we considered all 3600 #genes.
+ConnectivityRank = rank(-Connectivity)
+restConnectivity = ConnectivityRank <= ConnectivityCut
+# thus our module detection uses the following number of genes
+sum(restConnectivity)
+# Now we define the adjacency matrix for the 3600 most connected genes
+ADJ= adjacency(datExpr[,restConnectivity],power=beta1)
+gc()
+# The following code computes the topological overlap matrix based on the
+# adjacency matrix.
+# TIME: This about a few minutes....
+dissTOM=TOMdist(ADJ)
+gc() 
+
+# Now we carry out hierarchical clustering with the TOM matrix.
+# This takes a couple of minutes.
+hierTOM = hclust(as.dist(dissTOM),method="average");
+par(mfrow=c(1,1))
+plot(hierTOM,labels=F)
+```
+
+```{r}
+colorh1= cutreeStaticColor(hierTOM,cutHeight = 0.94, minSize = 10)
+# The above should be identical to colorh1=datSummary$color1[restConnectivity]
+par(mfrow=c(2,1),mar=c(2,4,1,1))
+plot(hierTOM, main="Cluster Dendrogram", labels=F, xlab="", sub="");
+plotColorUnderTree(hierTOM,colors=data.frame(module=colorh1))
+title("Module (branch) color")
+```
+```{r}
+# We also propose to use classical multi-dimensional scaling plots
+# for visualizing the network. Here we chose 2 scaling dimensions
+# This also takes about 10 minutes...
+cmd1=cmdscale(as.dist(dissTOM),2)
+par(mfrow=c(1,1))
+plot(cmd1, col=as.character(colorh1), main="MDS plot",xlab="Scaling Dimension
+1",ylab="Scaling Dimension 2") 
+```
