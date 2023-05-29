@@ -41,6 +41,8 @@ rm(dat0);gc()
 # Soft Clustering
 
 ```{r}
+library(ggplot2)
+
 powers1=c(seq(1,10,by=1),seq(12,20,by=2))
 RpowerTable=pickSoftThreshold(datExpr, powerVector=powers1)[[2]] 
 
@@ -53,9 +55,9 @@ plot(RpowerTable[,1], -sign(RpowerTable[,3])*RpowerTable[,2],
 
 text(RpowerTable[,1], -sign(RpowerTable[,3])*RpowerTable[,2],
      labels=powers1,cex=cex1,col="red")
-
 # this line corresponds to using an R^2 cut-off of h
 abline(h=0.95,col="red")
+
 plot(RpowerTable[,1], RpowerTable[,5],xlab="Soft Threshold (power)",ylab="Mean
 Connectivity", type="n")
 text(RpowerTable[,1], RpowerTable[,5], labels=powers1, cex=cex1,col="red") 
@@ -213,6 +215,8 @@ ggplot(data.frame(grey=sum(colorh1=="grey"),
                        names_to=c("module"),values_to="count")) +
   geom_bar(aes(x=reorder(module,-count),y=count), stat = 'identity') + 
   labs(y = "Number of genes", x="module") + theme_bw()
+
+ggsave("figures/WGCNA_genes_per_module.png")
 ```
 
 ```{r plot_module_profile}
@@ -254,11 +258,13 @@ for(i in 1:length(colorh1))
 colnames(datExpr) <- 1:dim(datExpr)[2]
 
 GWENA::plot_expression_profiles(datExpr, modules)
+ggsave("figures/WGCNA_expr_profiles.png")
 ```
 
 ```{r modules_enrichment, fig.height=12}
 enrichment <- GWENA::bio_enrich(modules)
 GWENA::plot_enrichment(enrichment, interactive=F)
+ggsave("figures/WGCNA_enrichment.png")
 ```
 
 # Hard Clustering
