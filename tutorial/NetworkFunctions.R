@@ -716,7 +716,7 @@ title(paste(title1,", p-value=", signif(pp,2) ))
 # ===================================================
 #The function fisherPvector allows one to compute Fisher exact p-values
 # Thus it allows one to carry out an EASE analysis
-# Output: a table of Fisher¡¯s exact p-values
+# Output: a table of Fisherï¿½ï¿½s exact p-values
 # Input: annotation1 is a vector of gene annotations
 # Input: couleur (French for color) denotes the module color of each gene
 # Only those gene functions (levels of annotation1) that occur a certain mininum number of times
