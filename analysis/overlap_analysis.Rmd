@@ -1,0 +1,326 @@
+
+```{r libraries}
+# read in the R libraries
+library(MASS) # standard, no need to install
+library(class) # standard, no need to install
+library(cluster)
+library(impute)# install it for imputing missing value
+library(WGCNA)
+library(oligo)
+library(GEOquery)
+options(stringsAsFactors=F)
+```
+
+
+```{r}
+
+# Specify GSE accession number
+gse_acc <- "GSE39653"  # Replace with the actual GSE accession number
+
+# Download GSE data
+gse <- getGEO(gse_acc)
+
+# Extract expression data
+expression_data <- exprs(gse[[1]])
+has_zeros <- any(expression_data == 0)
+# Extract sample metadata
+metadata <- pData(gse[[1]])
+```
+
+```{r}
+file_path <- "GSE39653/GSE39653_non-normalized.txt.gz"
+
+# Read the compressed file
+raw_data <- read.table(gzfile(file_path), header = TRUE, sep = "\t")
+
+all_samples <- raw_data[, grep("^SAMPLE", names(raw_data))]
+
+# Reassign column names
+patient_indicator <- metadata$title
+#patient_indicator <- sub("-.*", "", patient_indicator)
+#patient_indicator <- sub("[0-9]+$", "", patient_indicator)
+#colnames(all_samples) <- patient_indicator
+#rownames(all_samples) <- raw_data$ID_REF
+
+```
+
+```{r}
+
+
+# Calculate the expression threshold for bottom third
+expression_threshold <- quantile(expression_data, 0.33)  # Bottom third threshold
+
+# Determine which genes meet the removal criteria
+genes_to_remove <- rowSums(expression_data <= expression_threshold) >= 0.8 * ncol(expression_data)
+
+# Remove genes that meet the removal criteria
+expression_data_filtered <- expression_data[!genes_to_remove, ]
+
+# Calculate the gene variability
+gene_variability <- apply(expression_data, 2, var)
+
+# Determine the variability threshold for the top 70%
+variability_threshold <- quantile(gene_variability, 0.3)
+
+# Select the top 70% most variable genes
+expression_data_final <- expression_data[gene_variability >= variability_threshold, ]
+
+
+```
+
+
+
+```{r}
+# Reassign column names
+patient_indicator <- metadata$title
+#patient_indicator <- sub("[0-9]+$", "", patient_indicator)
+colnames(expression_data_final) <- patient_indicator
+#rownames(expression_data) <- raw_data$ID_REF
+```
+
+
+```{r}
+MD_combined_data <- expression_data_final[, grep("^(MDD|BD)", colnames(expression_data_final))]
+MDD_data <- expression_data_final[, grep(paste0("^", "MDD"), colnames(expression_data_final))]
+BD_data <- expression_data_final[, grep(paste0("^", "BD"), colnames(expression_data_final))]
+HC_data <- expression_data_final[, grep(paste0("^", "HC"), colnames(expression_data_final))]
+```
+
+```{r}
+#datExpr_All <- t(expression_data_final)
+#beta1_All=5
+#Connectivity_All=softConnectivity(datExpr_All,power=beta1_All)-1
+
+#datExpr_HC <- t(HC_data)
+#beta1_HC=7
+#Connectivity_HC=softConnectivity(datExpr_HC,power=beta1_HC)-1
+
+datExpr_MD <- t(MD_combined_data)
+beta1_MD=5
+Connectivity_MD=softConnectivity(datExpr_MD,power=beta1_MD)-1
+```
+
+```{r}
+ConnectivityCut_All = 5000 # number of most connected genes that will be considered
+# Incidentally, in the paper by Mischel et al (2005) we considered all 3600 #genes.
+ConnectivityRank_All = rank(-Connectivity_All)
+restConnectivity_All = ConnectivityRank_All <= ConnectivityCut_All
+# thus our module detection uses the following number of genes
+sum(restConnectivity_All)
+# Now we define the adjacency matrix for the 3600 most connected genes
+ADJ_All= adjacency(datExpr_All[,restConnectivity_All],power=beta1_All)
+gc()
+# The following code computes the topological overlap matrix based on the
+# adjacency matrix.
+# TIME: This about a few minutes....
+dissTOM_All=TOMdist(ADJ_All)
+gc() 
+
+hierTOM_All = hclust(as.dist(dissTOM_All),method="average");
+colorh1_All= cutreeStaticColor(hierTOM_All,cutHeight = 0.94, minSize = 50)
+unique_colors_All <- unique(colorh1_All)
+
+# Create an empty list to store the indexes
+modules_All <- list()
+# Iterate over each element in unique_list
+for (element in unique_colors_All) {
+  # Get the indexes of elements in my_list that match the current element
+  indexes <- which(unlist(colorh1_All) == element)
+  
+  # Store the indexes in index_list
+  modules_All[[element]] <- indexes
+}
+```
+
+
+
+```{r}
+ConnectivityCut_HC = 5000 # number of most connected genes that will be considered
+# Incidentally, in the paper by Mischel et al (2005) we considered all 3600 #genes.
+ConnectivityRank_HC = rank(-Connectivity_HC)
+restConnectivity_HC = ConnectivityRank_HC <= ConnectivityCut_HC
+# thus our module detection uses the following number of genes
+sum(restConnectivity_HC)
+# Now we define the adjacency matrix for the 3600 most connected genes
+ADJ_HC= adjacency(datExpr_HC[,restConnectivity_HC],power=beta1_HC)
+gc()
+# The following code computes the topological overlap matrix based on the
+# adjacency matrix.
+# TIME: This about a few minutes....
+dissTOM_HC=TOMdist(ADJ_HC)
+gc() 
+
+hierTOM_HC = hclust(as.dist(dissTOM_HC),method="average");
+colorh1_HC= cutreeStaticColor(hierTOM_HC,cutHeight = 0.94, minSize = 50)
+unique_colors_HC <- unique(colorh1_HC)
+
+# Create an empty list to store the indexes
+modules_HC <- list()
+# Iterate over each element in unique_list
+for (element in unique_colors_HC) {
+  # Get the indexes of elements in my_list that match the current element
+  indexes <- which(unlist(colorh1_HC) == element)
+  
+  # Store the indexes in index_list
+  modules_HC[[element]] <- indexes
+}
+```
+
+```{r}
+ConnectivityCut_MD = 5000 # number of most connected genes that will be considered
+# Incidentally, in the paper by Mischel et al (2005) we considered all 3600 #genes.
+ConnectivityRank_MD = rank(-Connectivity_MD)
+restConnectivity_MD = ConnectivityRank_MD <= ConnectivityCut_MD
+# thus our module detection uses the following number of genes
+sum(restConnectivity_MD)
+# Now we define the adjacency matrix for the 3600 most connected genes
+ADJ_MD= adjacency(datExpr_MD[,restConnectivity_MD],power=beta1_MD)
+gc()
+# The following code computes the topological overlap matrix based on the
+# adjacency matrix.
+# TIME: This about a few minutes....
+dissTOM_MD=TOMdist(ADJ_MD)
+gc() 
+
+hierTOM_MD = hclust(as.dist(dissTOM_MD),method="average");
+colorh1_MD= cutreeStaticColor(hierTOM_MD,cutHeight = 0.94, minSize = 50)
+unique_colors_MD <- unique(colorh1_MD)
+
+# Create an empty list to store the indexes
+modules_MD <- list()
+# Iterate over each element in unique_list
+for (element in unique_colors_MD) {
+  # Get the indexes of elements in my_list that match the current element
+  indexes <- which(unlist(colorh1_MD) == element)
+  
+  # Store the indexes in index_list
+  modules_MD[[element]] <- indexes
+}
+```
+
+
+```{r}
+# Step 1: Calculate the percent overlap between two lists
+calculate_overlap <- function(list1, list2) {
+  if (length(list1) > length(list2)) {
+  longest_len = length(list1)}
+  else {
+  longest_len = length(list2)}
+  
+  common_elements <- intersect(list1, list2)
+  percent_overlap <- length(common_elements) / longest_len * 100
+  return(percent_overlap)
+}
+
+# Step 2: Create an empty matrix to store the percentage overlap values
+num_rows <- length(modules_All)
+num_cols <- length(modules_HC)
+overlap_matrix <- matrix(0, nrow = num_rows, ncol = num_cols)
+
+# Step 3: Calculate the overlap values and store them in the matrix
+for (i in 1:num_rows) {
+  for (j in 1:num_cols) {
+    overlap_matrix[i, j] <- calculate_overlap(modules_All[[i]], modules_HC[[j]])
+  }
+}
+
+# Extract the Name property from each sublist
+row_names <- names(modules_All)
+col_names <- names(modules_HC)
+
+# Step 4: Create the heatmap using the heatmap.2 function
+library(gplots)
+
+heatmap.2(overlap_matrix, xlab = "modules_HC", ylab = "modules_ALL",
+          col = colorRampPalette(c("white", "blue"))(40),
+          key = TRUE, key.title = "Percent Overlap", key.xlab = "Percentage",
+          trace = "none", Rowv = TRUE, Colv = TRUE,
+          dendrogram = "both",labRow = row_names, labCol = col_names,margins = c(8, 8))
+
+```
+
+
+```{r}
+# Step 1: Calculate the percent overlap between two lists
+calculate_overlap <- function(list1, list2) {
+  if (length(list1) > length(list2)) {
+  longest_len = length(list1)}
+  else {
+  longest_len = length(list2)}
+  
+  common_elements <- intersect(list1, list2)
+  percent_overlap <- length(common_elements) / longest_len * 100
+  return(percent_overlap)
+}
+
+# Step 2: Create an empty matrix to store the percentage overlap values
+num_rows <- length(modules_All)
+num_cols <- length(modules_MD)
+overlap_matrix <- matrix(0, nrow = num_rows, ncol = num_cols)
+
+# Step 3: Calculate the overlap values and store them in the matrix
+for (i in 1:num_rows) {
+  for (j in 1:num_cols) {
+    overlap_matrix[i, j] <- calculate_overlap(modules_All[[i]], modules_MD[[j]])
+  }
+}
+
+# Extract the Name property from each sublist
+row_names <- names(modules_All)
+col_names <- names(modules_MD)
+
+# Step 4: Create the heatmap using the heatmap.2 function
+library(gplots)
+
+heatmap.2(overlap_matrix, xlab = "modules_MD", ylab = "modules_ALL",
+          col = colorRampPalette(c("white", "blue"))(40),
+          key = TRUE, key.title = "Percent Overlap", key.xlab = "Percentage",
+          trace = "none", Rowv = TRUE, Colv = TRUE,
+          dendrogram = "both",labRow = row_names, labCol = col_names,
+          margins = c(8, 8))
+
+```
+
+```{r}
+# Step 1: Calculate the percent overlap between two lists
+calculate_overlap <- function(list1, list2) {
+  if (length(list1) > length(list2)) {
+  longest_len = length(list1)}
+  else {
+  longest_len = length(list2)}
+  
+  common_elements <- intersect(list1, list2)
+  percent_overlap <- length(common_elements) / longest_len * 100
+  return(percent_overlap)
+}
+
+# Step 2: Create an empty matrix to store the percentage overlap values
+num_rows <- length(modules_HC)
+num_cols <- length(modules_MD)
+overlap_matrix <- matrix(0, nrow = num_rows, ncol = num_cols)
+
+# Step 3: Calculate the overlap values and store them in the matrix
+for (i in 1:num_rows) {
+  for (j in 1:num_cols) {
+    overlap_matrix[i, j] <- calculate_overlap(modules_HC[[i]], modules_MD[[j]])
+  }
+}
+
+# Extract the Name property from each sublist
+row_names <- names(modules_HC)
+col_names <- names(modules_MD)
+
+# Step 4: Create the heatmap using the heatmap.2 function
+library(gplots)
+
+heatmap.2(overlap_matrix, xlab = "modules_MD", ylab = "modules_HC",
+          col = colorRampPalette(c("white", "blue"))(40),
+          key = TRUE, key.title = "Percent Overlap", key.xlab = "Percentage",
+          trace = "none", Rowv = TRUE, Colv = TRUE,
+          dendrogram = "both",labRow = row_names, labCol = col_names,margins = c(8, 8))
+
+```
+
+
+
+

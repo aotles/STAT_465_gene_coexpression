@@ -1,0 +1,247 @@
+---
+title: "WGCNA_Tutorial"
+author: "Geoffrey Bonnanzio"
+date: "2023-05-23"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries}
+# read in the R libraries
+library(MASS) # standard, no need to install
+library(class) # standard, no need to install
+library(cluster)
+library(impute)# install it for imputing missing value
+library(WGCNA)
+library(oligo)
+library(GEOquery)
+options(stringsAsFactors=F)
+```
+
+
+
+```{r}
+
+# Specify GSE accession number
+gse_acc <- "GSE39653"  # Replace with the actual GSE accession number
+
+# Download GSE data
+gse <- getGEO(gse_acc)
+
+# Extract expression data
+expression_data <- exprs(gse[[1]])
+has_zeros <- any(expression_data == 0)
+# Extract sample metadata
+metadata <- pData(gse[[1]])
+```
+
+```{r}
+file_path <- "GSE39653/GSE39653_non-normalized.txt.gz"
+
+# Read the compressed file
+raw_data <- read.table(gzfile(file_path), header = TRUE, sep = "\t")
+
+all_samples <- raw_data[, grep("^SAMPLE", names(raw_data))]
+
+# Reassign column names
+patient_indicator <- metadata$title
+#patient_indicator <- sub("-.*", "", patient_indicator)
+#patient_indicator <- sub("[0-9]+$", "", patient_indicator)
+#colnames(all_samples) <- patient_indicator
+#rownames(all_samples) <- raw_data$ID_REF
+
+```
+
+```{r}
+
+
+# Calculate the expression threshold for bottom third
+expression_threshold <- quantile(expression_data, 0.33)  # Bottom third threshold
+
+# Determine which genes meet the removal criteria
+genes_to_remove <- rowSums(expression_data <= expression_threshold) >= 0.8 * ncol(expression_data)
+
+# Remove genes that meet the removal criteria
+expression_data_filtered <- expression_data[!genes_to_remove, ]
+
+# Calculate the gene variability
+gene_variability <- apply(expression_data, 2, var)
+
+# Determine the variability threshold for the top 70%
+variability_threshold <- quantile(gene_variability, 0.3)
+
+# Select the top 70% most variable genes
+expression_data_final <- expression_data[gene_variability >= variability_threshold, ]
+
+
+```
+
+
+
+```{r}
+# Reassign column names
+patient_indicator <- metadata$title
+#patient_indicator <- sub("[0-9]+$", "", patient_indicator)
+colnames(expression_data_final) <- patient_indicator
+#rownames(expression_data) <- raw_data$ID_REF
+```
+
+
+```{r}
+MD_combined_data <- expression_data_final[, grep("^(MDD|BD)", colnames(expression_data_final))]
+MDD_data <- expression_data_final[, grep(paste0("^", "MDD"), colnames(expression_data_final))]
+BD_data <- expression_data_final[, grep(paste0("^", "BD"), colnames(expression_data_final))]
+HC_data <- expression_data_final[, grep(paste0("^", "HC"), colnames(expression_data_final))]
+```
+
+```{r}
+p_values <- numeric(nrow(expression_data_final))
+
+# Iterate over each gene and perform the Wilcoxon rank-sum test
+for (i in 1:nrow(expression_data_final)) {
+  
+  current_hc_samples <- HC_data[i, ]
+  current_md_samples <- MD_combined_data[i, ]
+  wilcox_result <- wilcox.test(current_hc_samples, current_md_samples,exact = FALSE)
+  p_values[i] <- wilcox_result$p.value
+}
+
+```
+
+```{r}
+#SOFT THRESHOLDING
+# Now we investigate soft thesholding with the power adjacency function
+powers1=c(seq(1,10,by=1),seq(12,20,by=2))
+
+
+RpowerTable=pickSoftThreshold(t(HC_data), powerVector=powers1)[[2]]
+gc()
+cex1=0.7
+par(mfrow=c(1,2))
+plot(RpowerTable[,1], -sign(RpowerTable[,3])*RpowerTable[,2],xlab="Soft Threshold (power)",ylab="Scale Free Topology Model Fit,signed R^2",type="n")
+text(RpowerTable[,1], -sign(RpowerTable[,3])*RpowerTable[,2],
+labels=powers1,cex=cex1,col="red")
+# this line corresponds to using an R^2 cut-off of h
+abline(h=0.95,col="red")
+plot(RpowerTable[,1], RpowerTable[,5],xlab="Soft Threshold (power)",ylab="Mean
+Connectivity", type="n")
+text(RpowerTable[,1], RpowerTable[,5], labels=powers1, cex=cex1,col="red") 
+```
+
+```{r}
+datExpr <- t(HC_data)
+beta1=7
+Connectivity=softConnectivity(datExpr,power=beta1)-1
+# Let’s create a scale free topology plot.
+# The black curve corresponds to scale free topology and
+# the red curve corresponds to truncated scale free topology.
+par(mfrow=c(1,1))
+scaleFreePlot(Connectivity, main=paste("soft threshold, power=",beta1), truncated=F) 
+```
+
+```{r}
+ConnectivityCut = 5000 # number of most connected genes that will be considered
+# Incidentally, in the paper by Mischel et al (2005) we considered all 3600 #genes.
+ConnectivityRank = rank(-Connectivity)
+restConnectivity = ConnectivityRank <= ConnectivityCut
+# thus our module detection uses the following number of genes
+sum(restConnectivity)
+# Now we define the adjacency matrix for the 3600 most connected genes
+ADJ= adjacency(datExpr[,restConnectivity],power=beta1)
+gc()
+# The following code computes the topological overlap matrix based on the
+# adjacency matrix.
+# TIME: This about a few minutes....
+dissTOM=TOMdist(ADJ)
+gc() 
+
+# Now we carry out hierarchical clustering with the TOM matrix.
+# This takes a couple of minutes.
+hierTOM = hclust(as.dist(dissTOM),method="average");
+par(mfrow=c(1,1))
+plot(hierTOM,labels=F)
+```
+
+```{r}
+colorh1= cutreeStaticColor(hierTOM,cutHeight = 0.94, minSize = 50)
+# The above should be identical to colorh1=datSummary$color1[restConnectivity]
+par(mfrow=c(2,1),mar=c(2,4,1,1))
+plot(hierTOM, main="Cluster Dendrogram", labels=F, xlab="", sub="");
+plotColorUnderTree(hierTOM,colors=data.frame(module=colorh1))
+title("Module (branch) color")
+```
+
+
+```{r}
+cmd1=cmdscale(as.dist(dissTOM),2)
+par(mfrow=c(1,1))
+plot(cmd1, col=as.character(colorh1), main="MDS plot",xlab="Scaling Dimension
+1",ylab="Scaling Dimension 2") 
+```
+
+```{r}
+# this defines the gene significance for all genes
+GeneSignificanceALL=-log10(p_values)
+# gene significance restricted to the most connected genes:
+GeneSignificance=GeneSignificanceALL[restConnectivity]
+# The function verboseBarplot creates a bar plot
+# that shows whether modules are enriched with essential genes.
+# It also reports a Kruskal Wallis P-value.
+# The gene significance can be a binary variable or a quantitative variable.
+# also plots the 95% confidence interval of the mean
+par(mfrow=c(1,1))
+verboseBarplot(GeneSignificance,colorh1,main="Module Significance ",
+col=levels(factor(colorh1)) ,xlab="Module" ) 
+```
+
+
+```{r plot_module_profile}
+
+unique_colors <- unique(colorh1)
+
+# Create an empty list to store the indexes
+modules <- list()
+
+# Iterate over each element in unique_list
+for (element in unique_colors) {
+  # Get the indexes of elements in my_list that match the current element
+  indexes <- which(unlist(colorh1) == element)
+  
+  # Store the indexes in index_list
+  modules[[element]] <- indexes
+}
+
+```
+
+
+
+```{r}
+datME=moduleEigengenes(datExpr[,restConnectivity],colorh1)[[1]]
+# We define a dissimilarity measure between the module eigengenes that keeps track of the sign of the correlation between the module eigengenes.
+dissimME=1-(t(cor(datME, method="p")))/2
+hclustdatME=hclust(as.dist(dissimME), method="average" )
+par(mfrow=c(1,1))
+plot(hclustdatME, main="Clustering tree based on the module eigengenes of modules") 
+```
+
+
+```{r}
+#To study how connectivity is related to mean gene expression or variance of gene expression
+# we create the following plot.
+mean1=function(x) mean(x,na.rm=T)
+var1=function(x) var(x,na.rm=T)
+meanExpr=apply( datExpr[,restConnectivity],2,mean1)
+varExpr=apply( datExpr[,restConnectivity],2,var1)
+par(mfrow=c(1,2))
+plot(Connectivity[restConnectivity],meanExpr, col=as.character(colorh1),
+main="Mean(Expression) vs K",xlab="Connectivity")
+plot (Connectivity[restConnectivity],varExpr, col= as.character(colorh1), main="Var(Expression)
+vs K" ,xlab="Connectivity")
+```
+
+
+
+
