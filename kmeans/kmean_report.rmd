@@ -1,0 +1,117 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, echo=FALSE, include=FALSE}
+library(factoextra)
+source("NetworkFunctions.R")
+# read in the R libraries
+library(MASS) # standard, no need to install
+library(class) # standard, no need to install
+library(cluster)
+#library(impute) # install it for imputing missing value 
+library(WGCNA)
+options(stringsAsFactors = F)
+library(gplots)
+```
+
+```{r readInData}
+dat0=read.csv("gbm55old_dchip_14kALL_cox_8000mvgenes2.csv")
+# this contains information on the genes
+datSummary=dat0[,1:9] 
+
+datExpr = t(dat0[,10:64]) 
+no.samples = dim(datExpr)[[1]]
+rm(dat0);gc()
+```
+
+###############################
+Run the below section if you want to only analyze the same genes the tutorial analyzes
+
+```{r}
+beta1=6
+Connectivity=softConnectivity(datExpr,power=beta1)-1
+ConnectivityCut = 3600 # number of most connected genes that will be considered
+# Incidentally, in the paper by Mischel et al (2005) we considered all 3600 #genes.
+ConnectivityRank = rank(-Connectivity)
+restConnectivity = ConnectivityRank <= ConnectivityCut
+dataExprMostExpressed <- datExpr[,restConnectivity]
+```
+
+###############################
+
+
+
+
+
+
+```{r kmeanPrep}
+standardize <- function(x){
+ (x-mean(x))/sd(x)
+}
+## standardize the data
+#usually transposed
+#Uncomment the below to use the full dataset
+#exprNorm =apply(as.matrix(datExpr),1,standardize)
+#use the most expressed dataset
+exprNorm =apply(as.matrix(dataExprMostExpressed),1,standardize)
+
+```
+
+```{r investigateKmeanNumberMethods}
+fviz_nbclust(exprNorm, kmeans,  method = c("silhouette"))
+fviz_nbclust(exprNorm, kmeans,  method = c("wss"))
+#fviz_nbclust(exprNorm, kmeans,  method = c("gap_stat"))
+```
+
+
+```{r plotPCA}
+#setup eigenvectors
+varianceExprs <- var(exprNorm)
+eigenResults <- eigen(varianceExprs)
+eigenVectors <- eigenResults$vectors
+
+
+#take number from gap_stat and use that
+numClusters <- 5
+kmeansExpr <- kmeans(exprNorm, numClusters)
+```
+
+```{r eigenVectors}
+#Get the PCAs for the axes
+eigenVector1 <- eigenVectors[,1]
+eigenVector2 <- eigenVectors[,2]
+PCA1 <- exprNorm%*%eigenVector1
+PCA2 <- exprNorm%*%eigenVector2
+
+
+#label the expr matrix with the appropriate clusters
+clusteredExpr <- cbind(exprNorm,PCA1,PCA2,kmeansExpr$cluster)
+```
+
+``` {r plot Kmeans}
+#onto plotting
+plot(PCA1,PCA2, type="n", main=paste("K-means clustering with", numClusters, "groupings as determined by PCA"))
+#we are just going to plot out each cluster
+for (i in 1:numClusters){
+  #index 58 is the indice that we bound the cluster label to.
+  points(PCA1[clusteredExpr[,58]==i],PCA2[clusteredExpr[,58]==i],col=i)
+}
+
+```
+
+```{r}
+colorh1= cutreeStaticColor(hierTOM,cutHeight = 0.94, minSize = 125)
+# The above should be identical to colorh1=datSummary$color1[restConnectivity]
+par(mfrow=c(3,1),mar=c(2,4,1,1))
+plot(hierTOM, main="Cluster Dendrogram", labels=F, xlab="", sub="");
+plotColorUnderTree(hierTOM,colors=data.frame(module=colorh1))
+plotColorUnderTree(kmeansExpr$cluster,colors=data.frame(module=colorh1))
+title("Module (branch) color") 
+```
+
+
+
+
