@@ -4,6 +4,7 @@ output:
   html_document: default
 ---
 
+
 ```{r setup, echo=FALSE, include=FALSE}
 library(factoextra)
 source("NetworkFunctions.R")
@@ -11,11 +12,29 @@ source("NetworkFunctions.R")
 library(MASS) # standard, no need to install
 library(class) # standard, no need to install
 library(cluster)
-#library(impute) # install it for imputing missing value 
+library(impute) # install it for imputing missing value 
 library(WGCNA)
 options(stringsAsFactors = F)
+library(oligo)
+library(GEOquery)
 library(gplots)
 ```
+
+```{r}
+
+# Specify GSE accession number
+gse_acc <- "GSE39653"  # Replace with the actual GSE accession number
+
+# Download GSE data
+gse <- getGEO(gse_acc)
+
+# Extract expression data
+expression_data <- exprs(gse[[1]])
+has_zeros <- any(expression_data == 0)
+# Extract sample metadata
+metadata <- pData(gse[[1]])
+```
+
 
 ```{r readInData}
 dat0=read.csv("gbm55old_dchip_14kALL_cox_8000mvgenes2.csv")
@@ -38,26 +57,37 @@ ConnectivityCut = 3600 # number of most connected genes that will be considered
 ConnectivityRank = rank(-Connectivity)
 restConnectivity = ConnectivityRank <= ConnectivityCut
 dataExprMostExpressed <- datExpr[,restConnectivity]
+
+####apply to other data set
+
+Connectivity_other=softConnectivity(expression_data,power=beta1)-1
+
+ConnectivityRank_other = rank(-Connectivity_other)
+restConnectivity_other = ConnectivityRank_other <= ConnectivityCut
+dataExprMostExpressed_other <- datExpr[,restConnectivity_other]
+
 ```
 
-###############################
-
-
-
-
-
+# The below is where we select the dataset we want to use
 
 ```{r kmeanPrep}
 standardize <- function(x){
  (x-mean(x))/sd(x)
 }
-## standardize the data
-#usually transposed
-#Uncomment the below to use the full dataset
-#exprNorm =apply(as.matrix(datExpr),1,standardize)
-#use the most expressed dataset
-exprNorm =apply(as.matrix(dataExprMostExpressed),1,standardize)
+##
 
+
+## standardize the data
+#Only uncomment 1 of the below exprNorm lines
+#Uncomment the below to use the full WGCNA dataset
+#exprNorm =apply(as.matrix(datExpr),1,standardize)
+#use the most expressed dataset (WGCNA)
+#exprNorm =apply(as.matrix(dataExprMostExpressed),1,standardize)
+#use the below for the other data set K-means cluster
+#Mood disorder data set unfiltered - gigantic and takes forever to run through eigen functions
+exprNorm =apply(as.matrix(expression_data),1,standardize)
+#use the 3500 most common genes from mood disorder data set
+#exprNorm =apply(as.matrix(dataExprMostExpressed_other),1,standardize)
 ```
 
 ```{r investigateKmeanNumberMethods}
@@ -102,15 +132,6 @@ for (i in 1:numClusters){
 
 ```
 
-```{r}
-colorh1= cutreeStaticColor(hierTOM,cutHeight = 0.94, minSize = 125)
-# The above should be identical to colorh1=datSummary$color1[restConnectivity]
-par(mfrow=c(3,1),mar=c(2,4,1,1))
-plot(hierTOM, main="Cluster Dendrogram", labels=F, xlab="", sub="");
-plotColorUnderTree(hierTOM,colors=data.frame(module=colorh1))
-plotColorUnderTree(kmeansExpr$cluster,colors=data.frame(module=colorh1))
-title("Module (branch) color") 
-```
 
 
 
