@@ -107,12 +107,15 @@ plot(hierTOM,labels=F)
 ```
 
 ```{r}
+
 colorh1= cutreeStaticColor(hierTOM,cutHeight = 0.94, minSize = 125)
 # The above should be identical to colorh1=datSummary$color1[restConnectivity]
 par(mfrow=c(2,1),mar=c(2,4,1,1))
 plot(hierTOM, main="Cluster Dendrogram", labels=F, xlab="", sub="");
 plotColorUnderTree(hierTOM,colors=data.frame(module=colorh1))
 title("Module (branch) color") 
+
+plotDendroAndColors(hierTOM,colors=data.frame(module=colorh1),dendroLabels = FALSE)
 ```
 
 ```{r}

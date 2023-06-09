@@ -96,7 +96,11 @@ Multiple filtration methods have been natively implemented :
 In this example, we will be filtering the low variable genes with `filter_low_var` function.
 
 ```{r filtration}
-datExpr_filtered <- filter_low_var(datExpr, pct = 0.7, type = "median")
+#datExpr_filtered <- filter_low_var(datExpr, pct = 0.7, type = "median")
+
+datExpr_filtered <- filter_low_var(datExpr, pct = 0.45, type = "median")
+
+#datExpr_filtered <- datExpr
 
 # Remaining number of genes
 ncol(datExpr_filtered)
@@ -119,7 +123,7 @@ These successive adjustments improve the detection of modules for the next step.
 ```{r net_building}
 # In order to fasten the example execution time, we only take an 
 # arbitary sample of the genes. 
-net <- build_net(datExpr_filtered, cor_func = "spearman", 
+net <- build_net(datExpr_filtered, cor_func = "spearman",
                  n_threads = threads_to_use)
 
 # Power selected :
@@ -128,6 +132,23 @@ net$metadata$power
 # Fit of the power law to data ($R^2$) :
 fit_power_table <- net$metadata$fit_power_table
 fit_power_table[fit_power_table$Power == net$metadata$power, "SFT.R.sq"]
+```
+
+```{r}
+gc()
+cex1=0.7
+par(mfrow=c(1,2))
+plot(fit_power_table[,1], -sign(fit_power_table[,3])*fit_power_table[,2],
+     xlab="Soft Threshold (power)",
+     ylab="Scale Free Topology Model Fit,signed R^2",type="n")
+
+text(fit_power_table[,1], -sign(fit_power_table[,3])*fit_power_table[,2],
+     labels=fit_power_table[,1],cex=cex1,col="red")
+# this line corresponds to using an R^2 cut-off of h
+abline(h=0.95,col="red")
+plot(fit_power_table[,1], fit_power_table[,5],xlab="Soft Threshold (power)",ylab="Mean
+Connectivity", type="n")
+text(fit_power_table[,1], fit_power_table[,5], labels=fit_power_table[,1], cex=cex1,col="red") 
 ```
 
 
@@ -139,9 +160,9 @@ Such modules can be detected using unsupervised learning or modeling. GWENA use 
 
 ```{r modules_detection}
 modules <- detect_modules(datExpr_filtered, 
-                            net$network, 
-                            detailled_result = TRUE,
-                            merge_threshold = 0.25)
+                          net$network, 
+                          detailled_result = TRUE,
+                          pam_respects_dendro=T)
 ```
 
 **Important**: Module 0 contains all genes that did not fit into any modules.
@@ -162,6 +183,7 @@ layout_mod_merge <- plot_modules_merge(
 Resulting modules contain more genes whose repartition can be seen by a simple barplot. 
 
 ```{r plot_modules_gene_distribution, fig.height=3}
+library(tidyverse)
 ggplot2::ggplot(data.frame(modules$modules %>% stack), 
                 ggplot2::aes(x = ind)) + ggplot2::stat_count() +
   ggplot2::ylab("Number of genes") +
@@ -175,6 +197,66 @@ Each of the modules presents a distinct profile, which can be plotted in two fig
 ```{r plot_module_profile}
 plot_expression_profiles(datExpr_filtered, modules$modules)
 ggsave("figures/expression_profiles_gwena.png")
+```
+
+```{r}
+
+all_mod <- rep("",3600)
+for(i in 1:length(modules$modules$`0`))
+{
+  all_mod[strtoi(modules$modules$`0`[i])] <- "grey"
+}
+
+for(i in 1:length(modules$modules$`1`))
+{
+  all_mod[strtoi(modules$modules$`1`[i])] <- "turquoise"
+}
+
+for(i in 1:length(modules$modules$`2`))
+{
+  all_mod[strtoi(modules$modules$`2`[i])] <- "blue"
+}
+
+for(i in 1:length(modules$modules$`3`))
+{
+  all_mod[strtoi(modules$modules$`3`[i])] <- "red"
+}
+
+
+for(i in 1:length(modules$modules$`4`))
+{
+  all_mod[strtoi(modules$modules$`4`[i])] <- "yellow"
+}
+
+for(i in 1:length(modules$modules$`5`))
+{
+  all_mod[strtoi(modules$modules$`5`[i])] <- "green"
+}
+
+for(i in 1:length(modules$modules$`6`))
+{
+  all_mod[strtoi(modules$modules$`6`[i])] <- "orange"
+}
+
+for(i in 1:length(modules$modules$`7`))
+{
+  all_mod[strtoi(modules$modules$`7`[i])] <- "purple"
+}
+
+all_mod <- all_mod[nzchar(all_mod)]
+all_mod <- na.omit(all_mod)
+```
+
+```{r}
+colorh2= WGCNA::cutreeStaticColor(modules$dendrogram_genes, cutHeight=0.985)
+
+par(mfrow=c(1,2))
+barplot(table(all_mod))
+barplot(table(colorh2))
+
+WGCNA::plotDendroAndColors(modules$dendrogram_genes,colors=data.frame(module=all_mod),dendroLabels = FALSE)
+WGCNA::plotDendroAndColors(modules$dendrogram_genes,colors=data.frame(module=colorh2),dendroLabels = FALSE)
+WGCNA::plotDendroAndColors(modules$dendrogram_genes,colors=data.frame(module=dynamicTreeCut::cutreeDynamic(modules$dendrogram_genes,distM=net$network,pamRespectsDendro = T)),dendroLabels = FALSE)
 ```
 
 
